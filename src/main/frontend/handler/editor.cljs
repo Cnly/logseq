@@ -2734,9 +2734,10 @@
 
         ;; If you type `xyz`, the last backtick should close the first and not add another autopair
         ;; If you type several backticks in a row, each one should autopair to accommodate multiline code (```)
-        (contains? (set (keys autopair-map)) key)
+        ;; Autopair for brackets and parentheses handled in keyup event
+        (contains? (set/difference (set (keys autopair-map)) #{"[" "("}) key)
         (let [curr (get-current-input-char input)
-                  prev (util/nth-safe value (dec pos))]
+              prev (util/nth-safe value (dec pos))]
             (util/stop e)
             (if (and (= key "`") (= "`" curr) (not= "`" prev))
               (cursor/move-cursor-forward input)
@@ -2862,7 +2863,22 @@
                 (commands/handle-step [command-step])
                 (state/set-editor-action-data! {:pos pos}))
 
-              ;; Handle non-ascii square brackets
+              ;; Handle autopair for brackets and parentheses when no text is selected
+              (and blank-selected?
+                   (contains? keycode/left-sq-brackets-and-parens k)
+                   (= c k))  ;; Avoid IME problems like #4029
+              (do
+                (commands/handle-step [:editor/input
+                                       (str k (autopair-map k))
+                                       {:backward-pos 1
+                                        :backward-truncate-number 1}])
+                (when (and (= (:key last-key-code) k)
+                           (> current-pos 0))
+                  (when-let [search-step ({"[" [:editor/search-page]
+                                           "(" [:editor/search-block :reference]} k)]
+                    (commands/handle-step search-step))))
+
+              ;; Replace 2 non-ascii square brackets with page ref
               (and blank-selected?
                    (contains? keycode/left-square-brackets-keys k)
                    (= (:key last-key-code) k)
@@ -2874,7 +2890,7 @@
                 (commands/handle-step [:editor/search-page])
                 (state/set-editor-action-data! {:pos (cursor/get-caret-pos input)}))
 
-              ;; Handle non-ascii parentheses
+              ;; Replace 2 non-ascii parentheses with block ref
               (and blank-selected?
                    (contains? keycode/left-paren-keys k)
                    (= (:key last-key-code) k)
@@ -2886,7 +2902,7 @@
                 (commands/handle-step [:editor/search-block :reference])
                 (state/set-editor-action-data! {:pos (cursor/get-caret-pos input)}))
 
-              ;; Handle non-ascii angle brackets
+              ;; Replace 2 non-ascii angle brackets with ascii left angle
               (and (= "〈" c)
                    (= "《" (util/nth-safe value (dec (dec current-pos))))
                    (> current-pos 0))
